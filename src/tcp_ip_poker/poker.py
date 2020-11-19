@@ -486,64 +486,116 @@ class TexasHoldem:
     def _handle_winner(self):
         self._active = False
         player_combinations = [(VictoryCombination.determine_best_combination(player.hand + self._table), player) for player in self._players]
-        winning = []
+        currently_winning = None
+        contesting_winners = []
         for idx, player_combination in enumerate(player_combinations):
+            if idx == 0:
+                currently_winning = player_combination
+                continue
+            comparison = VictoryCombination.compare_combinations(currently_winning[0][0], player_combination[0][0])
+            if comparison == 1:
+                contesting_winners.clear()
+            elif comparison == 0:
+                player_combination, player = player_combination
+                player_combination, player_hand = player_combination
+                winning_combination, winning_player = currently_winning
+                winning_combination, winning_hand = winning_combination
+                player_dupes = VictoryCombination.duplicate_value_cards(player_hand)
+                win_dupes = VictoryCombination.duplicate_value_cards(winning_hand)
+                if player_combination == VictoryCombination.HIGH_CARD:
+                    player_sum = max(c.value for c in player_hand)
+                    win_sum = max(c.value for c in winning_hand)
+                elif player_combination in [VictoryCombination.PAIR, VictoryCombination.TWO_PAIRS]:
+                    player_cards = []
+                    for card_value in player_dupes:
+                        if len(player_dupes[card_value]) == 2:
+                            for card in player_dupes[card_value]:
+                                player_cards.append(card)
+                    win_cards = []
+                    for card_value in win_dupes:
+                        if len(win_dupes[card_value]) == 2:
+                            for card in win_dupes[card_value]:
+                                win_cards.append(card)
+                    player_sum = 0
+                    for card in player_cards:
+                        player_sum += card.value
+                    win_sum = 0
+                    for card in win_cards:
+                        win_sum += card.value
+                elif player_combination in [VictoryCombination.THREE_OF_A_KIND, VictoryCombination.FOUR_OF_A_KIND]:
+                    player_kinds = [player_dupes[card_value] for card_value in player_dupes if len(player_dupes[card_value]) in [3, 4]]
+                    win_kinds = [win_dupes[card_value] for card_value in win_dupes if len(win_dupes[card_value]) in [3, 4]]
+                    player_sum = sum([item.value for sublist in player_kinds for item in sublist])
+                    win_sum = sum([item.value for sublist in win_kinds for item in sublist])
+                else:
+                    player_sum = sum([c.value for c in player_hand])
+                    win_sum = sum([c.value for c in winning_hand])
+                if player_sum > win_sum:
+                    currently_winning = ((player_combination, player.hand), player)
+                    contesting_winners.clear()
+                elif player_sum == win_sum:
+                    contesting_winners.append(((player_combination, player_hand), player))
+            else:
+                currently_winning = player_combination
+                contesting_winners.clear()
+
+        if len(contesting_winners) > 0:
+            self._winner = [currently_winning[1]] + [contestant[1] for contestant in contesting_winners]
+            self._tie = True
+        else:
+            self._winner = currently_winning[1]
+            self._tie = False
+
+            
+            """
             combination, player = player_combination
             combination, player_hand = combination
             if idx == 0:
+                currently_winning = player, combination, player_hand
                 continue
-            previous_combination, previous_player = player_combinations[idx - 1]
-            previous_combination, previous_hand = previous_combination
-            comparison = VictoryCombination.compare_combinations(combination, previous_combination)
+            win_player, win_comb, win_hand = currently_winning
+            comparison = VictoryCombination.compare_combinations(combination, win_comb)
             if comparison == 1:
-                winning.clear()
-                winning.append(player)
+                currently_winning = player, combination, player_hand                
             elif comparison == 0:
                 player_dupes = VictoryCombination.duplicate_value_cards(player_hand)
-                previous_dupes = VictoryCombination.duplicate_value_cards(player_hand)
+                win_dupes = VictoryCombination.duplicate_value_cards(win_hand)
                 if combination == VictoryCombination.HIGH_CARD:
                     player_sum = max(c.value for c in player_hand)
-                    previous_sum = max(c.value for c in previous_hand)
+                    win_sum = max(c.value for c in win_hand)
                 elif combination in [VictoryCombination.PAIR, VictoryCombination.TWO_PAIRS]:
                     player_cards = []
                     for card_value in player_dupes:
                         if len(player_dupes[card_value]) == 2:
                             for card in player_dupes[card_value]:
                                 player_cards.append(card)
-                    previous_cards = []
-                    for card_value in previous_dupes:
-                        if len(previous_dupes[card_value]) == 2:
-                            for card in previous_dupes[card_value]:
-                                previous_cards.append(card)
+                    win_cards = []
+                    for card_value in win_dupes:
+                        if len(win_dupes[card_value]) == 2:
+                            for card in win_dupes[card_value]:
+                                win_cards.append(card)
                     player_sum = 0
                     for card in player_cards:
                         player_sum += card.value
-                    previous_sum = 0
-                    for card in previous_cards:
-                        previous_sum += card.value
+                    win_sum = 0
+                    for card in win_cards:
+                        win_sum += card.value
                 elif combination in [VictoryCombination.THREE_OF_A_KIND, VictoryCombination.FOUR_OF_A_KIND]:
                     player_kinds = [player_dupes[card_value] for card_value in player_dupes if len(player_dupes[card_value]) in [3, 4]]
-                    previous_kinds = [previous_dupes[card_value] for card_value in previous_dupes if len(previous_dupes[card_value]) in [3, 4]]
+                    win_kinds = [win_dupes[card_value] for card_value in win_dupes if len(win_dupes[card_value]) in [3, 4]]
                     player_sum = sum([item.value for sublist in player_kinds for item in sublist])
-                    previous_sum = sum([item.value for sublist in previous_kinds for item in sublist])
+                    win_sum = sum([item.value for sublist in win_kinds for item in sublist])
                 else:
                     player_sum = sum([c.value for c in player_hand])
-                    previous_sum = sum([c.value for c in previous_hand])
-                if player_sum > previous_sum:
-                    winning.clear()
+                    win_sum = sum([c.value for c in win_hand])
+                if player_sum > win_sum:
+                    currently_winning = player, combination, player_hand
+                elif player_sum == win_sum:
                     winning.append(player)
-                elif player_sum < previous_sum:
-                    winning.clear()
-                    winning.append(previous_player)
-                else:
-                    winning.append(player)
-                    winning.append(previous_player)
-            elif comparison == -1:
-                winning.clear()
-                winning.append(previous_player)
         if len(winning) > 1:
-            self._winner = None
+            self._winner = winning
             self._tie = True
         else:
             self._winner = winning[-1]
+            """
 

@@ -119,8 +119,9 @@ def test_victory_combinations():
 
 def test_full_game():
     game = TexasHoldem()
-    player_1 = game.add_player()
-    player_2 = game.add_player()
+    players = []
+    for _ in range(TexasHoldem.MAXIMUM_PLAYERS):
+        players.append(game.add_player())
     game.start()
     assert game.active
     with pytest.raises(Exception):
@@ -128,23 +129,15 @@ def test_full_game():
     with pytest.raises(Exception):
         game.add_player()
     with pytest.raises(Exception):
-        game.check(player_2)
-    assert game.players_turn == player_1
+        game.check(players[1])
+    assert game.players_turn == players[0]
 
-    assert len(game.table) == 3
-    game.check(player_1)
-    game.check(player_2)
-    
-    assert len(game.table) == 4
-    game.check(player_1)
-    game.check(player_2)
-    
-    assert len(game.table) == 5
-    game.check(player_1)
-    game.check(player_2)
+    for _ in range(3):
+        assert len(game.table) == 3 + _
+        for player in players:
+            game.check(player)
 
     assert not game.active
     winner, tied = game.get_result()
-    assert winner is None or isinstance(winner, Player)
+    assert isinstance(winner, list) or isinstance(winner, Player)
     assert isinstance(tied, bool)
-
