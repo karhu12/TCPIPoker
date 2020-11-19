@@ -19,13 +19,16 @@ setup(
         'Intended Audience :: Anyone',
         'Topic :: Entertainment',
         'License :: OSI Approved :: GNU General Public License',
-        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
     ],
     keywords='tcp/ip socket, poker, entertainment',
     package_dir={'': 'src'},
     packages=find_packages(where='src'),
-    python_requires='>=3.8',
+    python_requires='>=3.9',
     install_requires=[],
+    tests_requires=[
+        'pytest==6.1.2'
+    ],
     extras_require={},
     package_data={},
     entry_points={}
