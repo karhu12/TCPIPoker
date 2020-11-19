@@ -357,7 +357,7 @@ class VictoryCombination(enum.Enum):
             duplicates[card.value].append(card)
         return duplicates
 
-class PokerGame:
+class TexasHoldem:
     """ Class represents a game of Poker between 2 to 4 players. Players can either be 
     controller by AI of the software.
     """

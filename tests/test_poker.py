@@ -1,6 +1,6 @@
 import pytest
 
-from tcp_ip_poker import Card, Deck, Suit, PokerGame, VictoryCombination, Player
+from tcp_ip_poker import Card, Deck, Suit, TexasHoldem, VictoryCombination, Player
 
 def test_cards():
     deck = Deck()
@@ -118,7 +118,7 @@ def test_victory_combinations():
     assert VictoryCombination.determine_best_combination(straight_b1)[0] == VictoryCombination.STRAIGHT
 
 def test_full_game():
-    game = PokerGame()
+    game = TexasHoldem()
     player_1 = game.add_player()
     player_2 = game.add_player()
     game.start()
