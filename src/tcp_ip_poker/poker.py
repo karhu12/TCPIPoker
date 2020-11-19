@@ -9,6 +9,13 @@ class Suit(enum.Enum):
     HEARTS = ('Hearts','♡')
     DIAMONDS = ('Diamonds','♢')
 
+    @classmethod
+    def index(cls, item: Suit):
+        for idx, suit in enumerate(cls):
+            if suit == item:
+                return idx
+        return -1
+
 class Card:
     MIN_VALUE = 1
     VALUES = [
@@ -53,6 +60,9 @@ class Card:
 
     def __sub__(self, card: Card) -> int:
         return self.value - card.value
+        
+    def __hash__(self):
+        return (self.value << 2) | Suit.index(self.suit)
 
     # --- Properties ---
 
@@ -216,42 +226,93 @@ class VictoryCombination(enum.Enum):
             cards: Sequence[Card]
         ) -> Tuple(VictoryCombination, Sequence[Card]):
         best = VictoryCombination.HIGH_CARD
-        cards.sort(key=lambda item: item.value)
-        combinations = itertools.combinations(cards, r=5)
+        combinations = [list(comb) for comb in itertools.combinations(cards, r=5)]
         for combination in combinations:
-            pair_count = 0
-            uniques = []
-            for unique in set(combination):
-                if count := combination.count(unique) > 1:
-                    pair_count += 1
-                    uniques.append([card for card in combination if card == unique])
-            flush = False
-            for suit in Suit:
-                suit_count = sum(1 for c in combination if c.suit == suit)
-                if suit_count == 5:
-                    flush = True
-            straight = False
-            total_diff = 0
-            for idx, card in enumerate(combination):
-                if idx == 0:
-                    continue
-                total_diff += combination[idx - 1] - card
-                if total_diff == 4:
-                    straight = True
-            if straight:
-                if flush:
-                    best = cls.compare_combinations(best, VictoryCombination.STRAIGHT_FLUSH)
-                else:
-                    best = cls.compare_combinations(best, VictoryCombination.STRAIGHT)
+            combination.sort(key=lambda item: item.value)
+            flush = VictoryCombination.is_flush(combination)
+            straight = VictoryCombination.is_straight(combination)
+            duplicates = VictoryCombination.duplicate_value_cards(combination)
+            full_house = VictoryCombination.is_full_house(duplicates)
+            pairs, kinds,  = VictoryCombination.multiples(duplicates)
+            
+            if straight and flush:
+                best = VictoryCombination.compare_combinations(best, VictoryCombination.STRAIGHT_FLUSH)
+            elif kinds == 4:
+                best = VictoryCombination.compare_combinations(best,  VictoryCombination.FOUR_OF_A_KIND)
+            elif full_house:
+                best = VictoryCombination.compare_combinations(best, VictoryCombination.FULL_HOUSE)
             elif flush:
-                best = cls.compare_combinations(best, VictoryCombination.FLUSH)
+                best = VictoryCombination.compare_combinations(best, VictoryCombination.FLUSH)
+            elif straight:
+                best = VictoryCombination.compare_combinations(best, VictoryCombination.STRAIGHT)
+            elif kinds == 3:
+                best = VictoryCombination.compare_combinations(best, VictoryCombination.THREE_OF_A_KIND)
+            elif pairs == 2:
+                best = VictoryCombination.compare_combinations(best, VictoryCombination.TWO_PAIRS)
+            elif pairs == 1:
+                best = VictoryCombination.compare_combinations(best, VictoryCombination.PAIR)
         return best
 
     @classmethod
     def compare_combinations(cls, c1: VictoryCombination, c2: VictoryCombination):
         """ Returns the combination of higher degree. """
         return c1 if c1.value > c2.value else c2
-                    
+
+    @staticmethod
+    def is_flush(cards: Sequence[Card]):
+        """ Returns boolean whether the given cards contain a flush """
+        for suit in Suit:
+            suit_count = sum(1 for c in cards if c.suit == suit)
+            if suit_count == 5:
+                return True
+        return False
+
+    @staticmethod
+    def is_straight(cards: Sequence[Card]):
+        """ Returns boolean whether the given cards contain a straight """
+        total_diff = 0
+        for idx, card in enumerate(cards):
+            if idx == 0:
+                continue
+            total_diff += card - cards[idx - 1]
+        if total_diff == 4:
+            return True
+        return False
+
+    @staticmethod
+    def is_full_house(duplicates: Sequence[Card]):
+        """ Return boolean whether the given cards contain a full house """
+        two_type = False
+        three_type = False
+        for card_value in duplicates:
+            card_len = len(duplicates[card_value])
+            if card_len == 2:
+                two_type = True
+            elif card_len == 3:
+                three_type = True
+        return two_type and three_type
+
+    @staticmethod
+    def multiples(duplicates: Sequence[Card]) -> Tuple[int, int]:
+        """ Returns how many pairs and cards of kind there are as a tuple """
+        pairs = 0
+        kinds = 0
+        for card_value in duplicates:
+            card_len = len(duplicates[card_value]) 
+            if card_len == 2:
+                pairs += 1
+            kinds = max(kinds, len(duplicates[card_value]))
+        return pairs, kinds
+
+    @staticmethod
+    def duplicate_value_cards(cards: Sequence[Card]) -> Sequence[Card]:
+        """ Returns dict mapped with card value to the cards of that value """
+        duplicates = {}
+        for card in cards:
+            if card.value not in duplicates:
+                duplicates[card.value] = []
+            duplicates[card.value].append(card)
+        return duplicates
 
 class PokerGame:
     """ Class represents a game of Poker between 2 to 4 players. Players can either be 
