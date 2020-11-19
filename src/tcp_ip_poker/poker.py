@@ -226,37 +226,81 @@ class VictoryCombination(enum.Enum):
             cards: Sequence[Card]
         ) -> Tuple(VictoryCombination, Sequence[Card]):
         best = VictoryCombination.HIGH_CARD
+        best_idx = 0
         combinations = [list(comb) for comb in itertools.combinations(cards, r=5)]
+        results = []
         for combination in combinations:
             combination.sort(key=lambda item: item.value)
             flush = VictoryCombination.is_flush(combination)
             straight = VictoryCombination.is_straight(combination)
             duplicates = VictoryCombination.duplicate_value_cards(combination)
             full_house = VictoryCombination.is_full_house(duplicates)
-            pairs, kinds,  = VictoryCombination.multiples(duplicates)
+            pairs, kinds = VictoryCombination.multiples(duplicates)
             
             if straight and flush:
-                best = VictoryCombination.compare_combinations(best, VictoryCombination.STRAIGHT_FLUSH)
+                results.append(VictoryCombination.STRAIGHT_FLUSH)
             elif kinds == 4:
-                best = VictoryCombination.compare_combinations(best,  VictoryCombination.FOUR_OF_A_KIND)
+                results.append(VictoryCombination.FOUR_OF_A_KIND)
             elif full_house:
-                best = VictoryCombination.compare_combinations(best, VictoryCombination.FULL_HOUSE)
+                results.append(VictoryCombination.FULL_HOUSE)
             elif flush:
-                best = VictoryCombination.compare_combinations(best, VictoryCombination.FLUSH)
+                results.append(VictoryCombination.FLUSH)
             elif straight:
-                best = VictoryCombination.compare_combinations(best, VictoryCombination.STRAIGHT)
+                results.append(VictoryCombination.STRAIGHT)
             elif kinds == 3:
-                best = VictoryCombination.compare_combinations(best, VictoryCombination.THREE_OF_A_KIND)
+                results.append(VictoryCombination.THREE_OF_A_KIND)
             elif pairs == 2:
-                best = VictoryCombination.compare_combinations(best, VictoryCombination.TWO_PAIRS)
+                results.append(VictoryCombination.TWO_PAIRS)
             elif pairs == 1:
-                best = VictoryCombination.compare_combinations(best, VictoryCombination.PAIR)
-        return best
+                results.append(VictoryCombination.PAIR)
+            else:
+                results.append(VictoryCombination.HIGH_CARD)
+        for idx, current in enumerate(results):
+            if idx == 0:
+                best = current
+                best_idx = idx
+                continue
+            comparison = cls.compare_combinations(current, best)
+            if comparison == 0:
+                continue
+            elif comparison == 1:
+                best = current
+                best_idx = idx
+        if results.count(best) > 1:
+            best_comparison = []
+            lcombinations = []
+            for idx, res in enumerate(results):
+                if res == best:
+                    best_comparison.append(res)
+                    lcombinations.append(combinations[idx])
+            for idx, current in enumerate(best_comparison):
+                if idx == 0:
+                    continue
+                current_hand = lcombinations[idx]
+                previous = best_comparison[idx - 1]
+                previous_hand = lcombinations[idx - 1]
+                current_sum = sum(item.value for item in current_hand)
+                previous_sum = sum(item.value for item in previous_hand)
+                lidx = lcombinations.index(current_hand)
+                if current_sum > previous_sum:
+                    best = current
+                    best_idx = lidx
+                else:
+                    best = previous
+                    best_idx = lidx - 1
+            result = lcombinations[best_idx]
+        else:
+            result = combinations[best_idx]
+        return (best, result)
 
     @classmethod
-    def compare_combinations(cls, c1: VictoryCombination, c2: VictoryCombination):
-        """ Returns the combination of higher degree. """
-        return c1 if c1.value > c2.value else c2
+    def compare_combinations(cls, c1: VictoryCombination, c2: VictoryCombination) -> int:
+        """ Returns comparison value from combinations.
+        1 for c1 > c2
+        0 for c1 == c2
+        -1 for c1 < c2
+        """
+        return 1 if c1.value > c2.value else 0 if c1.value == c2.value else -1
 
     @staticmethod
     def is_flush(cards: Sequence[Card]):
@@ -270,14 +314,13 @@ class VictoryCombination(enum.Enum):
     @staticmethod
     def is_straight(cards: Sequence[Card]):
         """ Returns boolean whether the given cards contain a straight """
-        total_diff = 0
         for idx, card in enumerate(cards):
             if idx == 0:
                 continue
-            total_diff += card - cards[idx - 1]
-        if total_diff == 4:
-            return True
-        return False
+            diff = card - cards[idx - 1]
+            if diff != 1:
+                return False
+        return True
 
     @staticmethod
     def is_full_house(duplicates: Sequence[Card]):
@@ -326,18 +369,25 @@ class PokerGame:
         self._table: Sequence[Card] = []
         self._discard_pile: Sequence[Card] = []
         self._players: Sequence[Player] = []
-        self._moves: Sequence[Tuple[Player, Card]]
+        self._moves: Sequence[Tuple[Player, Card]] = []
         self._active = False
         self._players_turn: Union[Player, None] = None
         self._players_turn_handled: Sequence[Player] = []
         self._current_turn = 0
         self._played = 0
+        self._npcs = 0
+        self._winner = None
+        self._tie = False
 
     # --- Properties ---
 
     @property
     def active(self) -> bool:
-        return self._started
+        return self._active
+
+    @property
+    def players_turn(self) -> Player:
+        return self._players_turn
 
     @property
     def players(self) -> Sequence[Player]:
@@ -364,35 +414,42 @@ class PokerGame:
 
     def check(self, player: Player):
         if self._players_turn == player:
-            self._players_turn = self._players[(self._players.index(player) + 1) % len(self._players)]
-            
+            self._rotate_player(player)            
         else:
             raise Exception(f'Not {player}s turn')
 
-
-    def replace_cards(
-            self,
-            player: Player,
-            cards: Union[Card, int, Sequence[Union[Card, int]]]
-        ):
+    def fold(self, player: Player):
         if self._players_turn == player:
             pass
         else:
             raise Exception(f'Not {player}s turn')
 
-    
-
-    def add_player(self, host: Union[str, None] = None):
-        """ Adds a new player to the game with given host address. If host is None the 
-        player will be NPC (Non player controller) player.
+    def add_player(self, player: Union[Player, str, None] = None) -> Player:
+        """ Adds the given player or adds a new player with given host address and returns it.
+        If host is None the player will be NPC (Non player controller) player.
         """
+        if self.active:
+            raise Exception('Game already started')
         if len(self._players) == self.MAXIMUM_PLAYERS:
             raise Exception('Game already has maximum number of players')
-        new = Player(host)
-        for player in self._players:
-            if player.host == new:
+        if isinstance(player, str):
+            player = Player(player)
+        elif player is None:
+            player = Player('NPC{}'.format(self._npcs))
+            self._npcs += 1
+        for _player in self._players:
+            if _player.host == player.host:
                 raise Exception('Player already exists in the current game')
-        self._players.append(new)
+        self._players.append(player)
+        return player
+
+    def get_result(self) -> Tuple[bool, bool]:
+        """ Return the result of previosly played game if it has finished.
+        Raises exception if game still active.
+        """ 
+        if self.active:
+            raise Exception('Game is still running')
+        return None if self._winner is None else self._winner, self._tie
 
     # --- Private methods ---
 
@@ -426,5 +483,67 @@ class PokerGame:
         for card in self._deck.get_cards(count):
             self._table.append(card)
 
-    def _handle_winner():
-        pass
+    def _handle_winner(self):
+        self._active = False
+        player_combinations = [(VictoryCombination.determine_best_combination(player.hand + self._table), player) for player in self._players]
+        winning = []
+        for idx, player_combination in enumerate(player_combinations):
+            combination, player = player_combination
+            combination, player_hand = combination
+            if idx == 0:
+                continue
+            previous_combination, previous_player = player_combinations[idx - 1]
+            previous_combination, previous_hand = previous_combination
+            comparison = VictoryCombination.compare_combinations(combination, previous_combination)
+            if comparison == 1:
+                winning.clear()
+                winning.append(player)
+            elif comparison == 0:
+                player_dupes = VictoryCombination.duplicate_value_cards(player_hand)
+                previous_dupes = VictoryCombination.duplicate_value_cards(player_hand)
+                if combination == VictoryCombination.HIGH_CARD:
+                    player_sum = max(c.value for c in player_hand)
+                    previous_sum = max(c.value for c in previous_hand)
+                elif combination in [VictoryCombination.PAIR, VictoryCombination.TWO_PAIRS]:
+                    player_cards = []
+                    for card_value in player_dupes:
+                        if len(player_dupes[card_value]) == 2:
+                            for card in player_dupes[card_value]:
+                                player_cards.append(card)
+                    previous_cards = []
+                    for card_value in previous_dupes:
+                        if len(previous_dupes[card_value]) == 2:
+                            for card in previous_dupes[card_value]:
+                                previous_cards.append(card)
+                    player_sum = 0
+                    for card in player_cards:
+                        player_sum += card.value
+                    previous_sum = 0
+                    for card in previous_cards:
+                        previous_sum += card.value
+                elif combination in [VictoryCombination.THREE_OF_A_KIND, VictoryCombination.FOUR_OF_A_KIND]:
+                    player_kinds = [player_dupes[card_value] for card_value in player_dupes if len(player_dupes[card_value]) in [3, 4]]
+                    previous_kinds = [previous_dupes[card_value] for card_value in previous_dupes if len(previous_dupes[card_value]) in [3, 4]]
+                    player_sum = sum([item.value for sublist in player_kinds for item in sublist])
+                    previous_sum = sum([item.value for sublist in previous_kinds for item in sublist])
+                else:
+                    player_sum = sum([c.value for c in player_hand])
+                    previous_sum = sum([c.value for c in previous_hand])
+                if player_sum > previous_sum:
+                    winning.clear()
+                    winning.append(player)
+                elif player_sum < previous_sum:
+                    winning.clear()
+                    winning.append(previous_player)
+                else:
+                    winning.append(player)
+                    winning.append(previous_player)
+            elif comparison == -1:
+                winning.clear()
+                winning.append(previous_player)
+        if len(winning) > 1:
+            self._winner = None
+            self._tie = True
+        else:
+            self._winner = winning[-1]
+

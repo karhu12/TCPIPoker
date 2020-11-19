@@ -1,1 +1,1 @@
-from tcp_ip_poker.poker import Suit, Card, Deck, Player, PokerGame
+from tcp_ip_poker.poker import Suit, Card, Deck, Player, PokerGame, VictoryCombination

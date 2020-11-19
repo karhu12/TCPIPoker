@@ -1,7 +1,6 @@
 import pytest
 
-from tcp_ip_poker import Card, Deck, Suit
-from tcp_ip_poker.poker import VictoryCombination
+from tcp_ip_poker import Card, Deck, Suit, PokerGame, VictoryCombination, Player
 
 def test_cards():
     deck = Deck()
@@ -19,6 +18,7 @@ def test_cards():
 
     
 def test_victory_combinations():
+    # normal cases
     high_card_hand = [
         Card(Suit.DIAMONDS, 13),
         Card(Suit.DIAMONDS, 12),
@@ -91,12 +91,60 @@ def test_victory_combinations():
         Card(Suit.SPADES, 9)
     ]
 
-    assert VictoryCombination.determine_best_combination(high_card_hand) == VictoryCombination.HIGH_CARD
-    assert VictoryCombination.determine_best_combination(one_pair_hand) == VictoryCombination.PAIR
-    assert VictoryCombination.determine_best_combination(two_pair_hand) == VictoryCombination.TWO_PAIRS
-    assert VictoryCombination.determine_best_combination(three_of_kind_hand) == VictoryCombination.THREE_OF_A_KIND
-    assert VictoryCombination.determine_best_combination(straight_hand) == VictoryCombination.STRAIGHT
-    assert VictoryCombination.determine_best_combination(flush_hand) == VictoryCombination.FLUSH
-    assert VictoryCombination.determine_best_combination(full_house_hand) == VictoryCombination.FULL_HOUSE
-    assert VictoryCombination.determine_best_combination(four_of_kind_hand) == VictoryCombination.FOUR_OF_A_KIND
-    assert VictoryCombination.determine_best_combination(straight_flush_hand) == VictoryCombination.STRAIGHT_FLUSH
+    # border line cases
+
+    straight_b1 = [
+        Card(Suit.SPADES, 6),
+        Card(Suit.HEARTS, 8),
+        Card(Suit.CLUBS, 9),
+        Card(Suit.DIAMONDS, 9),
+        Card(Suit.SPADES, 10),
+        # + table
+        Card(Suit.SPADES, 7),
+        Card(Suit.SPADES, 13)
+    ]
+
+    # normal cases
+    assert VictoryCombination.determine_best_combination(high_card_hand)[0] == VictoryCombination.HIGH_CARD
+    assert VictoryCombination.determine_best_combination(one_pair_hand)[0] == VictoryCombination.PAIR
+    assert VictoryCombination.determine_best_combination(two_pair_hand)[0] == VictoryCombination.TWO_PAIRS
+    assert VictoryCombination.determine_best_combination(three_of_kind_hand)[0] == VictoryCombination.THREE_OF_A_KIND
+    assert VictoryCombination.determine_best_combination(straight_hand)[0] == VictoryCombination.STRAIGHT
+    assert VictoryCombination.determine_best_combination(flush_hand)[0] == VictoryCombination.FLUSH
+    assert VictoryCombination.determine_best_combination(full_house_hand)[0] == VictoryCombination.FULL_HOUSE
+    assert VictoryCombination.determine_best_combination(four_of_kind_hand)[0] == VictoryCombination.FOUR_OF_A_KIND
+    assert VictoryCombination.determine_best_combination(straight_flush_hand)[0] == VictoryCombination.STRAIGHT_FLUSH
+    # border line cases
+    assert VictoryCombination.determine_best_combination(straight_b1)[0] == VictoryCombination.STRAIGHT
+
+def test_full_game():
+    game = PokerGame()
+    player_1 = game.add_player()
+    player_2 = game.add_player()
+    game.start()
+    assert game.active
+    with pytest.raises(Exception):
+        game.start()
+    with pytest.raises(Exception):
+        game.add_player()
+    with pytest.raises(Exception):
+        game.check(player_2)
+    assert game.players_turn == player_1
+
+    assert len(game.table) == 3
+    game.check(player_1)
+    game.check(player_2)
+    
+    assert len(game.table) == 4
+    game.check(player_1)
+    game.check(player_2)
+    
+    assert len(game.table) == 5
+    game.check(player_1)
+    game.check(player_2)
+
+    assert not game.active
+    winner, tied = game.get_result()
+    assert winner is None or isinstance(winner, Player)
+    assert isinstance(tied, bool)
+
