@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import Union, Sequence
-import enum, itertools, random
+from typing import Union, Sequence, Tuple
+import enum, itertools, random, copy
 
 class Suit(enum.Enum):
     """ Value is a tuple of description and unicode symbol """
@@ -36,23 +36,23 @@ class Card:
         self._suit = suit
         self._value = value
 
-    def __eq__(self, card: Union[Card, int]) -> bool:
-        if isinstance(card, Card):
-            card = card.value
-        return self.value == card
+    def __eq__(self, card: Card) -> bool:
+        return self.value == card.value and self.suit == card.suit
 
-    def __lt__(self, card: Union[Card, int]) -> bool:
-        if isinstance(card, Card):
-            card = card.value
-        return  self.value < card
+    def __lt__(self, card: Card) -> bool:
+        return  self.value < card.value
 
-    def __gt__(self, card: Union[Card, int]) -> bool:
-        if isinstance(card, Card):
-            card = card.value
-        return  self.value > card
+    def __gt__(self, card: Card) -> bool:
+        return  self.value > card.value
 
-    def __str__(self):
-        return f"{self.get_value()} of {self.suit.value[0]} {self.suit.value[1]}"
+    def __str__(self) -> str:
+        return self.get_short_string()
+
+    def __add__(self, card: Card) -> int:
+        return self.value + card.value
+
+    def __sub__(self, card: Card) -> int:
+        return self.value - card.value
 
     # --- Properties ---
 
@@ -76,6 +76,10 @@ class Card:
     def get_short_string(self) -> str:
         """ Returns the short version from card e.g. [1♡] or [A♣] """
         return f"[{self.get_value(False)}{self.suit.value[1]}]"
+
+    def get_long_string(self) -> str:
+        """ Returns the long version from card e.g. "Ace of Hearts ♡" """
+        return f"{self.get_value()} of {self.suit.value[0]} {self.suit.value[1]}"
 
     # --- Private methods ---
 
@@ -121,8 +125,8 @@ class Deck:
             random.shuffle(self._cards)
 
     def peek_top(self) -> Card:
-        """ Peeks at the top card of the deck """
-        return self._cards[-1]
+        """ Returns an copy from top most card on the deck """
+        return copy.copy(self._cards[-1])
 
     def get_card(self) -> Union[Card, None]:
         """ Removes the top most card from the deck and returns it """
@@ -146,3 +150,220 @@ class Deck:
             else:
                 break
         return card_list
+
+class Player:
+    """ Represents a single player in a game of poker. Host is the IP address of given 
+    player but it can also be 'AIx' which represent an offline player.
+    """
+    MAX_CARDS_HAND = 5
+
+    def __init__(self, host: str):
+        self._host = host
+        self._hand: Sequence[Card] = []
+
+    # --- Properties ---
+
+    @property
+    def host(self) -> str:
+        return self._host
+
+    @property
+    def hand(self) -> Sequence[Card]:
+        """ Returns copy of current hand as a list of cards"""
+        return copy.copy(self._hand)
+
+    @property
+    def hand_full(self) -> bool:
+        """ Returns boolean whether the players hand is full or not """
+        return len(self._hand) == self.MAX_CARDS_HAND
+
+    # --- Public methods ---
+
+    def pick_card(self, card: Card):
+        if self.hand_full:
+            raise Exception('Hand is full')
+        self._hand.append(card)
+
+    def discard_card(self, card: Union[int, Card]) -> Card:
+        """ Discards the card of given index from hand. """
+        if isinstance(card, Card):
+            card = self._hand.index(card)
+        elif not -1 < card < len(self._hand):
+            raise ValueError('Invalid card index')
+        return self._hand.pop(card)
+
+    def discard_cards(self) -> Sequence[Card]:
+        """ Discards all cards in hand """
+        cards = []
+        while self.hand_full:
+            cards.append(self._hand.pop())
+        return cards
+
+class VictoryCombination(enum.Enum):
+    HIGH_CARD = 0
+    PAIR = enum.auto()
+    TWO_PAIRS = enum.auto()
+    THREE_OF_A_KIND = enum.auto()
+    STRAIGHT = enum.auto()
+    FLUSH = enum.auto()
+    FULL_HOUSE = enum.auto()
+    FOUR_OF_A_KIND = enum.auto()
+    STRAIGHT_FLUSH = enum.auto()
+
+    @classmethod
+    def determine_best_combination(
+            cls,
+            cards: Sequence[Card]
+        ) -> Tuple(VictoryCombination, Sequence[Card]):
+        best = VictoryCombination.HIGH_CARD
+        cards.sort(key=lambda item: item.value)
+        combinations = itertools.combinations(cards, r=5)
+        for combination in combinations:
+            pair_count = 0
+            uniques = []
+            for unique in set(combination):
+                if count := combination.count(unique) > 1:
+                    pair_count += 1
+                    uniques.append([card for card in combination if card == unique])
+            flush = False
+            for suit in Suit:
+                suit_count = sum(1 for c in combination if c.suit == suit)
+                if suit_count == 5:
+                    flush = True
+            straight = False
+            total_diff = 0
+            for idx, card in enumerate(combination):
+                if idx == 0:
+                    continue
+                total_diff += combination[idx - 1] - card
+                if total_diff == 4:
+                    straight = True
+            if straight:
+                if flush:
+                    best = cls.compare_combinations(best, VictoryCombination.STRAIGHT_FLUSH)
+                else:
+                    best = cls.compare_combinations(best, VictoryCombination.STRAIGHT)
+            elif flush:
+                best = cls.compare_combinations(best, VictoryCombination.FLUSH)
+        return best
+
+    @classmethod
+    def compare_combinations(cls, c1: VictoryCombination, c2: VictoryCombination):
+        """ Returns the combination of higher degree. """
+        return c1 if c1.value > c2.value else c2
+                    
+
+class PokerGame:
+    """ Class represents a game of Poker between 2 to 4 players. Players can either be 
+    controller by AI of the software.
+    """
+    MINIMUM_PLAYERS = 2
+    MAXIMUM_PLAYERS = 4
+
+    def __init__(self):
+        self._deck = Deck()
+        self._table: Sequence[Card] = []
+        self._discard_pile: Sequence[Card] = []
+        self._players: Sequence[Player] = []
+        self._moves: Sequence[Tuple[Player, Card]]
+        self._active = False
+        self._players_turn: Union[Player, None] = None
+        self._players_turn_handled: Sequence[Player] = []
+        self._current_turn = 0
+        self._played = 0
+
+    # --- Properties ---
+
+    @property
+    def active(self) -> bool:
+        return self._started
+
+    @property
+    def players(self) -> Sequence[Player]:
+        """ Returns an copy of current players """
+        return copy.copy(self._players)
+
+    @property
+    def table(self) -> Sequence[Card]:
+        """ Returns an copy of current tables cards """
+        return copy.copy(self._table)
+
+    # --- Public methods ---
+
+    def start(self):
+        if self.active:
+            raise Exception('Game already started')
+        if len(self._players) < 2:
+            raise Exception('Poker game requires atleast 2 playeres')
+        if self._played > 0:
+            pass # change leader
+        self._active = True
+        self._deck.shuffle(3)
+        self._handle_next_turn()
+
+    def check(self, player: Player):
+        if self._players_turn == player:
+            self._players_turn = self._players[(self._players.index(player) + 1) % len(self._players)]
+            
+        else:
+            raise Exception(f'Not {player}s turn')
+
+
+    def replace_cards(
+            self,
+            player: Player,
+            cards: Union[Card, int, Sequence[Union[Card, int]]]
+        ):
+        if self._players_turn == player:
+            pass
+        else:
+            raise Exception(f'Not {player}s turn')
+
+    
+
+    def add_player(self, host: Union[str, None] = None):
+        """ Adds a new player to the game with given host address. If host is None the 
+        player will be NPC (Non player controller) player.
+        """
+        if len(self._players) == self.MAXIMUM_PLAYERS:
+            raise Exception('Game already has maximum number of players')
+        new = Player(host)
+        for player in self._players:
+            if player.host == new:
+                raise Exception('Player already exists in the current game')
+        self._players.append(new)
+
+    # --- Private methods ---
+
+    def _rotate_player(self, player: Player):
+        self._players_turn_handled.append(player)
+        if len(self._players_turn_handled) == len(self._players):
+            self._players_turn_handled.clear()
+            self._handle_next_turn()
+        else:
+            self._players_turn = self._players[(self._players.index(player) + 1) % len(self._players)]
+
+    def _handle_next_turn(self):
+        if self._current_turn == 0:
+            self._serve_cards_to_players(2)
+            self._serve_cards_to_table(3)
+        elif self._current_turn == 1:
+            self._serve_cards_to_table(1)
+        elif self._current_turn == 2:
+            self._serve_cards_to_table(1)
+        else:
+            self._handle_winner()
+        self._players_turn = self._players[0]
+        self._current_turn += 1
+
+    def _serve_cards_to_players(self, count: int):
+        for _ in range(count):
+            for player in self._players:
+                player.pick_card(self._deck.get_card())
+
+    def _serve_cards_to_table(self, count: int):
+        for card in self._deck.get_cards(count):
+            self._table.append(card)
+
+    def _handle_winner():
+        pass
